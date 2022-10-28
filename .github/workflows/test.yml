@@ -14,9 +14,6 @@ jobs:
         with:
           node-version: 18
       - run: npm install
-      - run: DATABASE_URL=$MIGRATE_DATABASE_URL npm run migrate-deploy
-        env:
-          MIGRATE_DATABASE_URL: ${{secrets.MIGRATE_DATABASE_URL}}
       - run: npm run generate-client
       - run: npm run test
         env:
