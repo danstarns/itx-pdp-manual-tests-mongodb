@@ -1,4 +1,4 @@
-# itx-pdp-manual-tests-mysql
+# itx-pdp-manual-tests-mongodb
 
 ## Getting Started
 
