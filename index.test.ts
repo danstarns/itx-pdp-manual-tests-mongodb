@@ -10,6 +10,9 @@ describe("itx-pdp", () => {
     await prisma.user.deleteMany();
   });
 
+  /**
+   * Minimal example of an interactive transaction
+   */
   test("basic", async () => {
     const result = await prisma.$transaction(async (prisma) => {
       await prisma.user.create({
@@ -30,6 +33,9 @@ describe("itx-pdp", () => {
     expect(result.length).toBe(2);
   });
 
+  /**
+   * Transactions should fail after the default timeout
+   */
   test("timeout default", async () => {
     const result = prisma.$transaction(async (prisma) => {
       await prisma.user.create({
@@ -48,8 +54,13 @@ describe("itx-pdp", () => {
       code: "P2028",
       clientVersion: pkg.dependencies["@prisma/client"],
     });
+
+    expect(await prisma.user.findMany()).toHaveLength(0);
   });
 
+  /**
+   * Transactions should fail if they time out on `timeout`
+   */
   test("timeout override", async () => {
     const result = prisma.$transaction(
       async (prisma) => {
@@ -76,6 +87,9 @@ describe("itx-pdp", () => {
     expect(await prisma.user.findMany()).toHaveLength(0);
   });
 
+  /**
+   * Transactions should fail and rollback if thrown within
+   */
   test("rollback throw", async () => {
     const result = prisma.$transaction(async (prisma) => {
       await prisma.user.create({
@@ -87,13 +101,16 @@ describe("itx-pdp", () => {
       throw new Error("you better rollback now");
     });
 
-    await expect(result).rejects.toThrow("you better rollback now");
+    await expect(result).rejects.toThrow(`you better rollback now`);
 
     const users = await prisma.user.findMany();
 
     expect(users.length).toBe(0);
   });
 
+  /**
+   * Transactions should fail and rollback if a value is thrown within
+   */
   test("rollback throw value", async () => {
     const result = prisma.$transaction(async (prisma) => {
       await prisma.user.create({
@@ -110,28 +127,6 @@ describe("itx-pdp", () => {
     const users = await prisma.user.findMany();
 
     expect(users.length).toBe(0);
-  });
-
-  test("postgresql: nested create", async () => {
-    const result = prisma.$transaction(async (tx) => {
-      await tx.user.create({
-        data: {
-          email: "user_1@website.com",
-        },
-      });
-
-      await prisma.$transaction(async (tx) => {
-        await tx.user.create({
-          data: {
-            email: "user_2@website.com",
-          },
-        });
-      });
-
-      return tx.user.findMany();
-    });
-
-    await expect(result).resolves.toHaveLength(2);
   });
 
   /**
@@ -157,6 +152,9 @@ describe("itx-pdp", () => {
     await expect(result).resolves.toBe(undefined);
   });
 
+  /**
+   * If one of the query fails, all queries should cancel
+   */
   test("rollback query", async () => {
     const result = prisma.$transaction(async (prisma) => {
       await prisma.user.create({
@@ -172,9 +170,7 @@ describe("itx-pdp", () => {
       });
     });
 
-    await expect(result).rejects.toThrow(
-      "Unique constraint failed on the constraint: `User_email_key`"
-    );
+    await expect(result).rejects.toThrow("abc");
 
     const users = await prisma.user.findMany();
 
@@ -204,15 +200,16 @@ describe("itx-pdp", () => {
       clientVersion: pkg.dependencies["@prisma/client"],
     });
 
-    await expect(result).rejects.toThrow(
-      `Transaction API error: Transaction already closed: A query cannot be executed on a closed transaction`
-    );
+    await expect(result).rejects.toThrow("Transaction already closed");
 
     const users = await prisma.user.findMany();
 
     expect(users.length).toBe(0);
   });
 
+  /**
+   * Batching should work with using the interactive transaction logic
+   */
   test("batching", async () => {
     await prisma.$transaction([
       prisma.user.create({
@@ -246,42 +243,20 @@ describe("itx-pdp", () => {
       }),
     ]);
 
-    await expect(result).rejects.toThrow(
-      `Unique constraint failed on the constraint: \`User_email_key\``
-    );
+    await expect(result).rejects.toThrow("");
 
     const users = await prisma.user.findMany();
 
     expect(users.length).toBe(0);
   });
 
-  /**
-   * A bad batch should rollback using the interactive transaction logic
-   * // TODO: skipped because output differs from binary to library
-   */
-  test("batching raw rollback", async () => {
-    await prisma.user.create({
-      data: {
-        id: "1",
-        email: "user_1@website.com",
-      },
-    });
-
-    const result = prisma.$transaction([
-      prisma.$executeRaw`INSERT INTO User (id, email) VALUES (${"2"}, ${"user_2@website.com"})`,
-      prisma.$queryRaw`DELETE FROM User`,
-      prisma.$executeRaw`INSERT INTO User (id, email) VALUES (${"1"}, ${"user_1@website.com"})`,
-      prisma.$executeRaw`INSERT INTO User (id, email) VALUES (${"1"}, ${"user_1@website.com"})`,
-    ]);
-
-    await expect(result).rejects.toThrow(`Raw query failed. Code: \`1062\`.`);
-
-    const users = await prisma.user.findMany();
-
-    expect(users.length).toBe(1);
-  });
-
+  // running this test on isolated prisma instance since
+  // middleware change the return values of model methods
+  // and this would affect subsequent tests if run on a main instance
   describe("middlewares", () => {
+    /**
+     * Minimal example of a interactive transaction & middleware
+     */
     test("middleware basic", async () => {
       const isolatedPrisma = new PrismaClient();
       let runInTransaction = false;
@@ -311,6 +286,7 @@ describe("itx-pdp", () => {
      */
     test("middlewares batching", async () => {
       const isolatedPrisma = new PrismaClient();
+
       isolatedPrisma.$use(async (params, next) => {
         const result = await next(params);
 
@@ -455,6 +431,9 @@ describe("itx-pdp", () => {
     }
   });
 
+  /**
+   * Rollback should happen even with `then` calls
+   */
   test("rollback with then calls", async () => {
     const result = prisma.$transaction(async (prisma) => {
       await prisma.user
@@ -477,13 +456,16 @@ describe("itx-pdp", () => {
       throw new Error("rollback");
     });
 
-    await expect(result).rejects.toThrow("rollback");
+    await expect(result).rejects.toThrow(`rollback`);
 
     const users = await prisma.user.findMany();
 
     expect(users.length).toBe(0);
   });
 
+  /**
+   * Rollback should happen even with `catch` calls
+   */
   test("rollback with catch calls", async () => {
     const result = prisma.$transaction(async (prisma) => {
       await prisma.user
@@ -512,6 +494,9 @@ describe("itx-pdp", () => {
     expect(users.length).toBe(0);
   });
 
+  /**
+   * Rollback should happen even with `finally` calls
+   */
   test("rollback with finally calls", async () => {
     const result = prisma.$transaction(async (prisma) => {
       await prisma.user
@@ -535,89 +520,27 @@ describe("itx-pdp", () => {
       throw new Error("rollback");
     });
 
-    await expect(result).rejects.toThrow("rollback");
+    await expect(result).rejects.toThrow(`rollback`);
 
     const users = await prisma.user.findMany();
 
     expect(users.length).toBe(0);
   });
 
-  test("high concurrency with SET FOR UPDATE", async () => {
-    jest.setTimeout(60_000);
-    const CONCURRENCY = 12;
-
-    await prisma.user.create({
-      data: {
-        email: "x",
-        name: "y",
-        val: 1,
+  test("attempt to set isolation level on mongo", async () => {
+    // @ts-test-if: provider === 'mongodb'
+    const result = prisma.$transaction(
+      async (tx) => {
+        await tx.user.create({ data: { email: "user@example.com" } });
       },
-    });
-
-    const promises = [...Array(CONCURRENCY)].map(() =>
-      prisma.$transaction(
-        async (transactionPrisma) => {
-          await transactionPrisma.$queryRaw`SELECT id from "User" where email = 'x' FOR UPDATE`;
-
-          const user = await transactionPrisma.user.findUnique({
-            rejectOnNotFound: true,
-            where: {
-              email: "x",
-            },
-          });
-
-          // Add a delay here to force the transaction to be open for longer
-          // this will increase the chance of deadlock in the itx transactions
-          // if deadlock is a possibility.
-          await sleep(100);
-
-          const updatedUser = await transactionPrisma.user.update({
-            where: {
-              email: "x",
-            },
-            data: {
-              val: user.val! + 1,
-            },
-          });
-
-          return updatedUser;
-        },
-        { timeout: 60000, maxWait: 60000 }
-      )
+      {
+        // @ts-ignore
+        isolationLevel: "CanBeAnything",
+      }
     );
 
-    await Promise.allSettled(promises);
-
-    const finalUser = await prisma.user.findUnique({
-      rejectOnNotFound: true,
-      where: {
-        email: "x",
-      },
-    });
-
-    expect(finalUser.val).toEqual(CONCURRENCY + 1);
-  });
-
-  describe("isolation levels", () => {
-    test("invalid value", async () => {
-      // @ts-ignore
-      const result = prisma.$transaction(
-        async (tx) => {
-          await tx.user.create({ data: { email: "user@example.com" } });
-        },
-        {
-          isolationLevel: "NotAValidLevel",
-        }
-      );
-
-      await expect(result).rejects.toMatchObject({
-        code: "P2023",
-        clientVersion: pkg.dependencies["@prisma/client"],
-      });
-
-      await expect(result).rejects.toThrow(
-        "Inconsistent column data: Conversion failed: Invalid isolation level `NotAValidLevel`"
-      );
-    });
+    await expect(result).rejects.toThrowErrorMatchingInlineSnapshot(
+      `The current database provider doesn't support a feature that the query used: Mongo does not support setting transaction isolation levels.`
+    );
   });
 });
