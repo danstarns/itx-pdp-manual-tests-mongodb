@@ -539,7 +539,7 @@ describe("itx-pdp", () => {
       }
     );
 
-    await expect(result).rejects.toThrowErrorMatchingInlineSnapshot(
+    await expect(result).rejects.toThrow(
       `The current database provider doesn't support a feature that the query used: Mongo does not support setting transaction isolation levels.`
     );
   });
