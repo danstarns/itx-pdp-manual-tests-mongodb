@@ -170,7 +170,9 @@ describe("itx-pdp", () => {
       });
     });
 
-    await expect(result).rejects.toThrow("abc");
+    await expect(result).rejects.toThrow(
+      "Unique constraint failed on the constraint: `User_email_key`"
+    );
 
     const users = await prisma.user.findMany();
 
